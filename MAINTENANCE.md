@@ -1,22 +1,22 @@
-# ProjectLink Maintenance Documentation
+# Documentazione di Manutenzione ProjectLink
 
-This document provides technical details for maintaining and extending the ProjectLink application.
+Questo documento fornisce dettagli tecnici per la manutenzione e l'estensione dell'applicazione ProjectLink.
 
-## Table of Contents
+## Indice
 
-1. [Database Schema](#database-schema)
-2. [Row Level Security (RLS) Policies](#row-level-security-rls-policies)
+1. [Schema Database](#schema-database)
+2. [Politiche Row Level Security (RLS)](#politiche-row-level-security-rls)
 3. [API Routes](#api-routes)
-4. [Component Architecture](#component-architecture)
-5. [Troubleshooting](#troubleshooting)
+4. [Architettura Componenti](#architettura-componenti)
+5. [Risoluzione Problemi](#risoluzione-problemi)
 
 ---
 
-## Database Schema
+## Schema Database
 
-The application uses three main tables in PostgreSQL via Supabase.
+L'applicazione utilizza tre tabelle principali in PostgreSQL tramite Supabase.
 
-### Projects Table
+### Tabella Projects
 
 ```sql
 CREATE TABLE projects (
@@ -24,19 +24,21 @@ CREATE TABLE projects (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   slug TEXT UNIQUE NOT NULL,
+  archived BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key, auto-generated |
-| `user_id` | UUID | Foreign key to auth.users (admin owner) |
-| `name` | TEXT | Project display name |
-| `slug` | TEXT | Unique URL-safe identifier for public access |
-| `created_at` | TIMESTAMPTZ | Creation timestamp |
+| Colonna | Tipo | Descrizione |
+|---------|------|-------------|
+| `id` | UUID | Chiave primaria, auto-generata |
+| `user_id` | UUID | Chiave esterna verso auth.users (admin proprietario) |
+| `name` | TEXT | Nome visualizzato del progetto |
+| `slug` | TEXT | Identificatore univoco URL-safe per accesso pubblico |
+| `archived` | BOOLEAN | Se il progetto è archiviato (default: false) |
+| `created_at` | TIMESTAMPTZ | Timestamp di creazione |
 
-### Tickets Table
+### Tabella Tickets
 
 ```sql
 CREATE TABLE tickets (
@@ -51,18 +53,18 @@ CREATE TABLE tickets (
 );
 ```
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | UUID | PRIMARY KEY | Auto-generated |
-| `project_id` | UUID | FOREIGN KEY | References projects.id |
-| `title` | TEXT | NOT NULL | Ticket title |
-| `description` | TEXT | nullable | Optional description |
-| `status` | TEXT | CHECK constraint | One of: `todo`, `in_progress`, `done` |
-| `priority` | TEXT | CHECK constraint | One of: `low`, `medium`, `high` |
-| `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Creation timestamp |
-| `updated_at` | TIMESTAMPTZ | DEFAULT NOW() | Last update timestamp |
+| Colonna | Tipo | Vincoli | Descrizione |
+|---------|------|---------|-------------|
+| `id` | UUID | PRIMARY KEY | Auto-generato |
+| `project_id` | UUID | FOREIGN KEY | Riferimento a projects.id |
+| `title` | TEXT | NOT NULL | Titolo del ticket |
+| `description` | TEXT | nullable | Descrizione opzionale |
+| `status` | TEXT | CHECK constraint | Uno tra: `todo`, `in_progress`, `done` |
+| `priority` | TEXT | CHECK constraint | Uno tra: `low`, `medium`, `high` |
+| `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Timestamp di creazione |
+| `updated_at` | TIMESTAMPTZ | DEFAULT NOW() | Timestamp ultimo aggiornamento |
 
-### Comments Table
+### Tabella Comments
 
 ```sql
 CREATE TABLE comments (
@@ -75,16 +77,16 @@ CREATE TABLE comments (
 );
 ```
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key, auto-generated |
-| `ticket_id` | UUID | Foreign key to tickets |
-| `author_name` | TEXT | Display name of comment author |
-| `content` | TEXT | Comment content |
-| `is_admin` | BOOLEAN | True if comment is from admin |
-| `created_at` | TIMESTAMPTZ | Creation timestamp |
+| Colonna | Tipo | Descrizione |
+|---------|------|-------------|
+| `id` | UUID | Chiave primaria, auto-generata |
+| `ticket_id` | UUID | Chiave esterna verso tickets |
+| `author_name` | TEXT | Nome visualizzato dell'autore |
+| `content` | TEXT | Contenuto del commento |
+| `is_admin` | BOOLEAN | True se il commento è dell'admin |
+| `created_at` | TIMESTAMPTZ | Timestamp di creazione |
 
-### Indexes
+### Indici
 
 ```sql
 CREATE INDEX idx_projects_user_id ON projects(user_id);
@@ -95,9 +97,9 @@ CREATE INDEX idx_comments_ticket_id ON comments(ticket_id);
 CREATE INDEX idx_comments_created_at ON comments(created_at);
 ```
 
-### Triggers
+### Trigger
 
-The `update_updated_at_column()` trigger automatically updates `updated_at` on ticket modifications:
+Il trigger `update_updated_at_column()` aggiorna automaticamente `updated_at` alle modifiche dei ticket:
 
 ```sql
 CREATE TRIGGER update_tickets_updated_at
@@ -108,85 +110,90 @@ CREATE TRIGGER update_tickets_updated_at
 
 ---
 
-## Row Level Security (RLS) Policies
+## Politiche Row Level Security (RLS)
 
-RLS is enabled on all tables to enforce access control at the database level.
+RLS è abilitato su tutte le tabelle per applicare il controllo accessi a livello database.
 
-### Projects Policies
+### Politiche Projects
 
-| Policy | Role | Operation | Rule |
-|--------|------|-----------|------|
-| Admin can read own projects | authenticated | SELECT | `auth.uid() = user_id` |
-| Admin can insert own projects | authenticated | INSERT | `auth.uid() = user_id` |
-| Admin can update own projects | authenticated | UPDATE | `auth.uid() = user_id` |
-| Admin can delete own projects | authenticated | DELETE | `auth.uid() = user_id` |
-| Public can read projects by slug | anon | SELECT | `true` (all projects) |
+| Politica | Ruolo | Operazione | Regola |
+|----------|-------|------------|--------|
+| Admin può leggere propri progetti | authenticated | SELECT | `auth.uid() = user_id` |
+| Admin può inserire propri progetti | authenticated | INSERT | `auth.uid() = user_id` |
+| Admin può aggiornare propri progetti | authenticated | UPDATE | `auth.uid() = user_id` |
+| Admin può eliminare propri progetti | authenticated | DELETE | `auth.uid() = user_id` |
+| Pubblico può leggere progetti per slug | anon | SELECT | `true` (tutti i progetti) |
 
-### Tickets Policies
+### Politiche Tickets
 
-| Policy | Role | Operation | Rule |
-|--------|------|-----------|------|
-| Admin can read tickets in own projects | authenticated | SELECT | Project ownership check |
-| Admin can insert tickets in own projects | authenticated | INSERT | Project ownership check |
-| Admin can update tickets in own projects | authenticated | UPDATE | Project ownership check |
-| Admin can delete tickets in own projects | authenticated | DELETE | Project ownership check |
-| Public can read tickets | anon | SELECT | `true` (all tickets) |
-| Public can insert tickets | anon | INSERT | `true` (new requests) |
+| Politica | Ruolo | Operazione | Regola |
+|----------|-------|------------|--------|
+| Admin può leggere ticket nei propri progetti | authenticated | SELECT | Verifica proprietà progetto |
+| Admin può inserire ticket nei propri progetti | authenticated | INSERT | Verifica proprietà progetto |
+| Admin può aggiornare ticket nei propri progetti | authenticated | UPDATE | Verifica proprietà progetto |
+| Admin può eliminare ticket nei propri progetti | authenticated | DELETE | Verifica proprietà progetto |
+| Pubblico può leggere ticket | anon | SELECT | `true` (tutti i ticket) |
+| Pubblico può inserire ticket | anon | INSERT | `true` (nuove richieste) |
 
-**Note**: No UPDATE policy for `anon` role means unauthenticated users cannot change ticket status.
+**Nota**: Nessuna politica UPDATE per il ruolo `anon` significa che gli utenti non autenticati non possono cambiare lo stato dei ticket.
 
-### Comments Policies
+### Politiche Comments
 
-| Policy | Role | Operation | Rule |
-|--------|------|-----------|------|
-| Admin can read comments in own project tickets | authenticated | SELECT | Project ownership via ticket |
-| Admin can insert comments | authenticated | INSERT | Project ownership via ticket |
-| Admin can update own comments | authenticated | UPDATE | `is_admin = true` + ownership |
-| Admin can delete comments in own project tickets | authenticated | DELETE | Project ownership via ticket |
-| Public can read comments | anon | SELECT | `true` |
-| Public can insert comments | anon | INSERT | `is_admin = false AND author_name IS NOT NULL` |
+| Politica | Ruolo | Operazione | Regola |
+|----------|-------|------------|--------|
+| Admin può leggere commenti nei ticket dei propri progetti | authenticated | SELECT | Proprietà progetto via ticket |
+| Admin può inserire commenti | authenticated | INSERT | Proprietà progetto via ticket |
+| Admin può aggiornare propri commenti | authenticated | UPDATE | `is_admin = true` + proprietà |
+| Admin può eliminare commenti nei ticket dei propri progetti | authenticated | DELETE | Proprietà progetto via ticket |
+| Pubblico può leggere commenti | anon | SELECT | `true` |
+| Pubblico può inserire commenti | anon | INSERT | `is_admin = false AND author_name IS NOT NULL` |
 
 ---
 
 ## API Routes
 
-### Projects API
+### API Projects
 
 #### `POST /api/projects`
-Create a new project.
+Crea un nuovo progetto.
 
-**Authentication**: Required
+**Autenticazione**: Richiesta
 
-**Request Body**:
+**Body Richiesta**:
 ```json
 {
-  "name": "Project Name"
+  "name": "Nome Progetto"
 }
 ```
 
-**Response**: `201 Created`
+**Risposta**: `201 Created`
 ```json
 {
   "id": "uuid",
   "user_id": "uuid",
-  "name": "Project Name",
+  "name": "Nome Progetto",
   "slug": "abc123xyz",
+  "archived": false,
   "created_at": "2024-01-01T00:00:00Z"
 }
 ```
 
 #### `GET /api/projects/list`
-Get all projects for the authenticated user.
+Ottiene tutti i progetti dell'utente autenticato.
 
-**Authentication**: Required
+**Autenticazione**: Richiesta
 
-**Response**: `200 OK`
+**Parametri Query**:
+- `includeArchived` (opzionale): `true` per includere progetti archiviati
+
+**Risposta**: `200 OK`
 ```json
 [
   {
     "id": "uuid",
-    "name": "Project Name",
+    "name": "Nome Progetto",
     "slug": "abc123xyz",
+    "archived": false,
     "ticket_count": 5,
     "created_at": "2024-01-01T00:00:00Z"
   }
@@ -194,44 +201,58 @@ Get all projects for the authenticated user.
 ```
 
 #### `GET /api/projects/slug/[slug]`
-Get a project by its public slug.
+Ottiene un progetto tramite il suo slug pubblico.
 
-**Authentication**: Not required
+**Autenticazione**: Non richiesta
 
-**Response**: `200 OK` - Project object
+**Risposta**: `200 OK` - Oggetto progetto
 
 #### `GET /api/projects/[projectId]`
-Get a project by ID.
+Ottiene un progetto tramite ID.
 
-**Authentication**: Required
+**Autenticazione**: Richiesta
 
-**Response**: `200 OK` - Project object
+**Risposta**: `200 OK` - Oggetto progetto
 
-### Tickets API
+#### `PATCH /api/projects/[projectId]/archive`
+Archivia o ripristina un progetto.
+
+**Autenticazione**: Richiesta
+
+**Body Richiesta**:
+```json
+{
+  "archived": true
+}
+```
+
+**Risposta**: `200 OK` - Oggetto progetto aggiornato
+
+### API Tickets
 
 #### `POST /api/tickets/create`
-Create a new ticket.
+Crea un nuovo ticket.
 
-**Authentication**: Not required (public portal)
+**Autenticazione**: Non richiesta (portale pubblico)
 
-**Request Body**:
+**Body Richiesta**:
 ```json
 {
   "project_id": "uuid",
-  "title": "Ticket Title",
-  "description": "Optional description",
+  "title": "Titolo Ticket",
+  "description": "Descrizione opzionale",
   "priority": "low" | "medium" | "high"
 }
 ```
 
-**Response**: `201 Created` - Ticket object with `status: "todo"`
+**Risposta**: `201 Created` - Oggetto ticket con `status: "todo"`
 
 #### `PATCH /api/tickets`
-Update ticket status.
+Aggiorna lo stato del ticket.
 
-**Authentication**: Required
+**Autenticazione**: Richiesta
 
-**Request Body**:
+**Body Richiesta**:
 ```json
 {
   "ticketId": "uuid",
@@ -239,58 +260,58 @@ Update ticket status.
 }
 ```
 
-**Response**: `200 OK` - Updated ticket object
+**Risposta**: `200 OK` - Oggetto ticket aggiornato
 
 #### `GET /api/tickets/[projectId]`
-Get all tickets for a project.
+Ottiene tutti i ticket di un progetto.
 
-**Authentication**: Not required
+**Autenticazione**: Non richiesta
 
-**Response**: `200 OK` - Array of tickets
+**Risposta**: `200 OK` - Array di ticket
 
-### Comments API
+### API Comments
 
 #### `POST /api/comments`
-Create a new comment.
+Crea un nuovo commento.
 
-**Authentication**: Not required (but affects `is_admin` flag)
+**Autenticazione**: Non richiesta (ma influenza il flag `is_admin`)
 
-**Request Body**:
+**Body Richiesta**:
 ```json
 {
   "ticket_id": "uuid",
-  "author_name": "Author Name",
-  "content": "Comment content",
+  "author_name": "Nome Autore",
+  "content": "Contenuto commento",
   "is_admin": false
 }
 ```
 
-**Response**: `201 Created` - Comment object
+**Risposta**: `201 Created` - Oggetto commento
 
 #### `GET /api/comments/[ticketId]`
-Get all comments for a ticket.
+Ottiene tutti i commenti di un ticket.
 
-**Authentication**: Not required
+**Autenticazione**: Non richiesta
 
-**Response**: `200 OK` - Array of comments (chronological order)
+**Risposta**: `200 OK` - Array di commenti (ordine cronologico)
 
-### Notifications API
+### API Notifiche
 
 #### `POST /api/notify`
-Send email notification for new ticket.
+Invia notifica email per nuovo ticket.
 
-**Request Body**:
+**Body Richiesta**:
 ```json
 {
-  "title": "Ticket Title",
-  "description": "Ticket description",
+  "title": "Titolo Ticket",
+  "description": "Descrizione ticket",
   "priority": "high",
-  "projectName": "Project Name",
+  "projectName": "Nome Progetto",
   "dashboardUrl": "https://..."
 }
 ```
 
-**Response**: `200 OK`
+**Risposta**: `200 OK`
 ```json
 {
   "success": true,
@@ -300,194 +321,202 @@ Send email notification for new ticket.
 
 ---
 
-## Component Architecture
+## Architettura Componenti
 
-### Directory Structure
+### Struttura Directory
 
 ```
 src/components/
 ├── comments/
-│   ├── CommentForm.tsx      # Form for adding comments
-│   ├── CommentList.tsx      # Display comments chronologically
-│   └── index.ts             # Barrel export
+│   ├── CommentForm.tsx      # Form per aggiungere commenti
+│   ├── CommentList.tsx      # Visualizza commenti cronologicamente
+│   └── index.ts             # Export barrel
 ├── kanban/
-│   ├── KanbanBoard.tsx      # Main board with 3 columns
-│   ├── KanbanColumn.tsx     # Single status column
-│   ├── TicketCard.tsx       # Individual ticket card
+│   ├── KanbanBoard.tsx      # Board principale con 3 colonne
+│   ├── KanbanColumn.tsx     # Singola colonna di stato
+│   ├── TicketCard.tsx       # Card singolo ticket
 │   └── index.ts
 ├── projects/
-│   ├── NewProjectModal.tsx  # Modal for creating projects
-│   └── ProjectCard.tsx      # Project card for dashboard
+│   ├── NewProjectModal.tsx  # Modale per creare progetti
+│   └── ProjectCard.tsx      # Card progetto per dashboard
 ├── tickets/
-│   ├── NewTicketForm.tsx    # Form for creating tickets
-│   ├── NewTicketModal.tsx   # Modal wrapper for ticket form
-│   ├── TicketModal.tsx      # Ticket detail modal with comments
+│   ├── NewTicketForm.tsx    # Form per creare ticket
+│   ├── NewTicketModal.tsx   # Wrapper modale per form ticket
+│   ├── TicketModal.tsx      # Modale dettaglio ticket con commenti
 │   └── index.ts
-└── ui/                      # Shadcn/UI components
+└── ui/                      # Componenti Shadcn/UI
 ```
 
-### Key Components
+### Componenti Principali
 
 #### KanbanBoard
-- Renders three columns: "Da Fare", "In Lavorazione", "Completato"
-- Handles drag-and-drop for admin users
-- Subscribes to real-time ticket updates
+- Renderizza tre colonne: "Da Fare", "In Lavorazione", "Completato"
+- Gestisce drag-and-drop per utenti admin
+- Si iscrive agli aggiornamenti real-time dei ticket
 
 #### TicketCard
-- Displays ticket title, priority badge, creation date
-- Draggable when `isAdmin=true`
-- Clickable to open TicketModal
+- Visualizza titolo ticket, badge priorità, data creazione
+- Trascinabile quando `isAdmin=true`
+- Cliccabile per aprire TicketModal
 
 #### TicketModal
-- Shows full ticket details
-- Includes CommentList and CommentForm
-- Subscribes to real-time comment updates
+- Mostra dettagli completi del ticket
+- Include CommentList e CommentForm
+- Si iscrive agli aggiornamenti real-time dei commenti
 
 #### CommentList
-- Displays comments in chronological order
-- Visually distinguishes admin vs client comments
-- Admin comments have blue styling
+- Visualizza commenti in ordine cronologico
+- Distingue visivamente commenti admin vs cliente
+- Commenti admin hanno stile blu
 
-### Custom Hooks
+#### ProjectCard
+- Visualizza nome progetto, slug, conteggio ticket
+- Pulsante archivia/ripristina progetto
+- Link per copiare URL portale e aprire Kanban
+
+### Hook Personalizzati
 
 #### `useRealtimeTickets(projectId)`
-Subscribes to ticket changes for a project.
+Si iscrive ai cambiamenti dei ticket per un progetto.
 
 ```typescript
 const { tickets, loading, error } = useRealtimeTickets(projectId);
 ```
 
 #### `useRealtimeComments(ticketId)`
-Subscribes to comment changes for a ticket.
+Si iscrive ai cambiamenti dei commenti per un ticket.
 
 ```typescript
 const { comments, loading, error } = useRealtimeComments(ticketId);
 ```
 
-### Data Flow
+### Flusso Dati
 
-1. **Server Components** fetch initial data via lib functions
-2. **Client Components** receive data as props
-3. **Real-time hooks** subscribe to Supabase channels
-4. **API routes** handle mutations
-5. **Supabase triggers** broadcast changes to subscribers
+1. **Server Components** recuperano dati iniziali via funzioni lib
+2. **Client Components** ricevono dati come props
+3. **Hook real-time** si iscrivono ai canali Supabase
+4. **API routes** gestiscono le mutazioni
+5. **Trigger Supabase** trasmettono cambiamenti agli iscritti
 
 ---
 
-## Troubleshooting
+## Risoluzione Problemi
 
-### Common Issues
+### Problemi Comuni
 
-#### "Non autorizzato" (401) on Dashboard
+#### "Non autorizzato" (401) sulla Dashboard
 
-**Cause**: User session expired or not authenticated.
+**Causa**: Sessione utente scaduta o non autenticato.
 
-**Solution**:
-1. Check if cookies are enabled
-2. Clear browser storage and re-login
-3. Verify Supabase Auth configuration
+**Soluzione**:
+1. Verificare che i cookie siano abilitati
+2. Cancellare storage browser e ri-effettuare login
+3. Verificare configurazione Supabase Auth
 
-#### Tickets Not Updating in Real-time
+#### Ticket Non Si Aggiornano in Real-time
 
-**Cause**: Realtime subscription not active.
+**Causa**: Sottoscrizione Realtime non attiva.
 
-**Solution**:
-1. Verify `supabase_realtime` publication includes tickets table
-2. Check browser console for WebSocket errors
-3. Ensure Supabase project has Realtime enabled
+**Soluzione**:
+1. Verificare che la pubblicazione `supabase_realtime` includa la tabella tickets
+2. Controllare console browser per errori WebSocket
+3. Assicurarsi che il progetto Supabase abbia Realtime abilitato
 
-#### Email Notifications Not Sending
+#### Notifiche Email Non Inviate
 
-**Cause**: Resend configuration issue.
+**Causa**: Problema configurazione Resend.
 
-**Solution**:
-1. Verify `RESEND_API_KEY` is set correctly
-2. Check `ADMIN_EMAIL` is a valid email
-3. Review Resend dashboard for delivery status
-4. Check server logs for error messages
+**Soluzione**:
+1. Verificare che `RESEND_API_KEY` sia impostata correttamente
+2. Controllare che `ADMIN_EMAIL` sia un'email valida
+3. Controllare dashboard Resend per stato consegna
+4. Controllare log server per messaggi errore
 
-#### RLS Policy Violations
+#### Violazioni Politiche RLS
 
-**Cause**: User attempting unauthorized operation.
+**Causa**: Utente tenta operazione non autorizzata.
 
-**Solution**:
-1. Verify user is authenticated for protected operations
-2. Check that user owns the project for admin operations
-3. Review RLS policies in Supabase dashboard
+**Soluzione**:
+1. Verificare che l'utente sia autenticato per operazioni protette
+2. Controllare che l'utente sia proprietario del progetto per operazioni admin
+3. Rivedere politiche RLS nella dashboard Supabase
 
-#### Slug Collision on Project Creation
+#### Collisione Slug alla Creazione Progetto
 
-**Cause**: Extremely rare - generated slug already exists.
+**Causa**: Estremamente raro - slug generato già esistente.
 
-**Solution**: The `generateUniqueSlug` function automatically retries with a new slug. If persistent, check for database issues.
+**Soluzione**: La funzione `generateUniqueSlug` riprova automaticamente con un nuovo slug. Se persistente, controllare problemi database.
 
-### Debug Mode
+### Modalità Debug
 
-Enable verbose logging by adding to `.env.local`:
+Abilitare logging verboso aggiungendo a `.env.local`:
 
 ```bash
 DEBUG=true
 ```
 
-### Database Queries
+### Query Database
 
-Useful queries for debugging:
+Query utili per debug:
 
 ```sql
--- Check all projects for a user
+-- Controlla tutti i progetti di un utente
 SELECT * FROM projects WHERE user_id = 'user-uuid';
 
--- Check tickets with their project
+-- Controlla progetti archiviati
+SELECT * FROM projects WHERE archived = true;
+
+-- Controlla ticket con il loro progetto
 SELECT t.*, p.name as project_name 
 FROM tickets t 
 JOIN projects p ON t.project_id = p.id;
 
--- Check RLS policies
+-- Controlla politiche RLS
 SELECT * FROM pg_policies WHERE tablename IN ('projects', 'tickets', 'comments');
 
--- Check realtime publication
+-- Controlla pubblicazione realtime
 SELECT * FROM pg_publication_tables WHERE pubname = 'supabase_realtime';
 ```
 
-### Health Checks
+### Controlli Salute
 
-1. **Database**: Query `SELECT 1` via Supabase dashboard
-2. **Auth**: Check `/api/auth/signout` returns 200
-3. **Realtime**: Monitor WebSocket connection in browser DevTools
-4. **Email**: Send test via Resend dashboard
+1. **Database**: Query `SELECT 1` via dashboard Supabase
+2. **Auth**: Controllare che `/api/auth/signout` restituisca 200
+3. **Realtime**: Monitorare connessione WebSocket in DevTools browser
+4. **Email**: Inviare test via dashboard Resend
 
-### Performance Optimization
+### Ottimizzazione Performance
 
-1. **Indexes**: Ensure all indexes from schema.sql are created
-2. **Queries**: Use `.select()` with specific columns when possible
-3. **Realtime**: Unsubscribe from channels when components unmount
-4. **Caching**: Consider adding SWR or React Query for client-side caching
+1. **Indici**: Assicurarsi che tutti gli indici da schema.sql siano creati
+2. **Query**: Usare `.select()` con colonne specifiche quando possibile
+3. **Realtime**: Disiscriversi dai canali quando i componenti si smontano
+4. **Caching**: Considerare aggiunta di SWR o React Query per caching client-side
 
 ---
 
-## Extending the Application
+## Estendere l'Applicazione
 
-### Adding a New Entity
+### Aggiungere una Nuova Entità
 
-1. Add table to `supabase/schema.sql`
-2. Create RLS policies
-3. Add TypeScript types to `src/types/database.ts`
-4. Create service functions in `src/lib/`
-5. Add API routes in `src/app/api/`
-6. Create components in `src/components/`
+1. Aggiungere tabella a `supabase/schema.sql`
+2. Creare politiche RLS
+3. Aggiungere tipi TypeScript a `src/types/database.ts`
+4. Creare funzioni servizio in `src/lib/`
+5. Aggiungere API routes in `src/app/api/`
+6. Creare componenti in `src/components/`
 
-### Adding New Ticket Status
+### Aggiungere Nuovo Stato Ticket
 
-1. Update CHECK constraint in database
-2. Update `TicketStatus` type in `src/types/database.ts`
-3. Add column to KanbanBoard component
-4. Update status colors in UI components
+1. Aggiornare vincolo CHECK nel database
+2. Aggiornare tipo `TicketStatus` in `src/types/database.ts`
+3. Aggiungere colonna al componente KanbanBoard
+4. Aggiornare colori stato nei componenti UI
 
-### Internationalization
+### Internazionalizzazione
 
-Currently hardcoded to Italian. To add i18n:
+Attualmente hardcoded in italiano. Per aggiungere i18n:
 
-1. Install `next-intl` or similar
-2. Extract strings to translation files
-3. Update components to use translation functions
-4. Add language switcher component
+1. Installare `next-intl` o simile
+2. Estrarre stringhe in file di traduzione
+3. Aggiornare componenti per usare funzioni di traduzione
+4. Aggiungere componente selettore lingua

@@ -1,8 +1,8 @@
 import { createClient } from '@/utils/supabase/server';
 import { getProjects } from '@/lib/projects';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -14,7 +14,10 @@ export async function GET() {
       );
     }
 
-    const projects = await getProjects(user.id);
+    const { searchParams } = new URL(request.url);
+    const includeArchived = searchParams.get('includeArchived') === 'true';
+
+    const projects = await getProjects(user.id, includeArchived);
 
     return NextResponse.json(projects);
   } catch (error) {

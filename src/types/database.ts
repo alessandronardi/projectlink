@@ -13,6 +13,7 @@ export interface Project {
   user_id: string;
   name: string;
   slug: string;
+  archived: boolean;
   created_at: string;
 }
 

@@ -10,12 +10,13 @@ import type { Project, ProjectWithTicketCount, CreateProjectInput } from '@/type
 /**
  * Get all projects for a specific user with ticket counts
  * @param userId - The user ID to filter projects by
+ * @param includeArchived - Whether to include archived projects
  * @returns Array of projects with ticket counts
  */
-export async function getProjects(userId: string): Promise<ProjectWithTicketCount[]> {
+export async function getProjects(userId: string, includeArchived: boolean = false): Promise<ProjectWithTicketCount[]> {
   const supabase = await createClient();
   
-  const { data: projects, error } = await supabase
+  let query = supabase
     .from('projects')
     .select(`
       *,
@@ -23,6 +24,12 @@ export async function getProjects(userId: string): Promise<ProjectWithTicketCoun
     `)
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
+
+  if (!includeArchived) {
+    query = query.eq('archived', false);
+  }
+
+  const { data: projects, error } = await query;
 
   if (error) {
     throw new Error(`Failed to fetch projects: ${error.message}`);
@@ -33,6 +40,7 @@ export async function getProjects(userId: string): Promise<ProjectWithTicketCoun
     user_id: project.user_id,
     name: project.name,
     slug: project.slug,
+    archived: project.archived ?? false,
     created_at: project.created_at,
     ticket_count: project.tickets?.[0]?.count ?? 0,
   }));
@@ -119,6 +127,33 @@ export async function createProject(
 
   if (error) {
     throw new Error(`Failed to create project: ${error.message}`);
+  }
+
+  return data;
+}
+
+
+/**
+ * Archive or unarchive a project
+ * @param projectId - The project ID to archive/unarchive
+ * @param archived - Whether to archive (true) or unarchive (false)
+ * @returns The updated project
+ */
+export async function archiveProject(
+  projectId: string,
+  archived: boolean
+): Promise<Project> {
+  const supabase = await createClient();
+  
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ archived })
+    .eq('id', projectId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to ${archived ? 'archive' : 'unarchive'} project: ${error.message}`);
   }
 
   return data;

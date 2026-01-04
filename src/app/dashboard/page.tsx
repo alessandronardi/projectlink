@@ -4,18 +4,20 @@ import { useEffect, useState } from 'react';
 import { ProjectCard } from '@/components/projects/ProjectCard';
 import { NewProjectModal } from '@/components/projects/NewProjectModal';
 import { Button } from '@/components/ui/button';
-import { Plus, FolderKanban, Loader2 } from 'lucide-react';
+import { Plus, FolderKanban, Loader2, Archive } from 'lucide-react';
 import type { ProjectWithTicketCount } from '@/types/database';
 
 export default function DashboardPage() {
   const [projects, setProjects] = useState<ProjectWithTicketCount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchProjects = async () => {
+  const fetchProjects = async (includeArchived: boolean = false) => {
     try {
-      const response = await fetch('/api/projects/list');
+      setIsLoading(true);
+      const response = await fetch(`/api/projects/list?includeArchived=${includeArchived}`);
       if (!response.ok) {
         throw new Error('Errore nel caricamento dei progetti');
       }
@@ -29,13 +31,28 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchProjects();
-  }, []);
+    fetchProjects(showArchived);
+  }, [showArchived]);
 
   const handleModalClose = () => {
     setIsModalOpen(false);
-    fetchProjects(); // Refresh the list after closing modal
+    fetchProjects(showArchived);
   };
+
+  const handleArchiveToggle = (projectId: string, archived: boolean) => {
+    if (!showArchived && archived) {
+      // Remove from list if we're not showing archived and project was just archived
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+    } else {
+      // Update the project in the list
+      setProjects(prev => prev.map(p => 
+        p.id === projectId ? { ...p, archived } : p
+      ));
+    }
+  };
+
+  const activeProjects = projects.filter(p => !p.archived);
+  const archivedProjects = projects.filter(p => p.archived);
 
   if (isLoading) {
     return (
@@ -67,10 +84,20 @@ export default function DashboardPage() {
             Gestisci i tuoi progetti e le richieste dei clienti
           </p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)} aria-label="Crea nuovo progetto">
-          <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
-          Crea Nuovo Progetto
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant={showArchived ? "default" : "outline"}
+            onClick={() => setShowArchived(!showArchived)}
+            aria-label={showArchived ? 'Nascondi progetti archiviati' : 'Mostra progetti archiviati'}
+          >
+            <Archive className="h-4 w-4 mr-2" aria-hidden="true" />
+            {showArchived ? 'Nascondi Archiviati' : 'Mostra Archiviati'}
+          </Button>
+          <Button onClick={() => setIsModalOpen(true)} aria-label="Crea nuovo progetto">
+            <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
+            Crea Nuovo Progetto
+          </Button>
+        </div>
       </div>
 
       {/* Projects Grid */}
@@ -89,15 +116,47 @@ export default function DashboardPage() {
           </Button>
         </div>
       ) : (
-        <div 
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-          role="list"
-          aria-label="Lista progetti"
-        >
-          {projects.map((project) => (
-            <ProjectCard key={project.id} project={project} />
-          ))}
-        </div>
+        <>
+          {/* Active Projects */}
+          {activeProjects.length > 0 && (
+            <div 
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              role="list"
+              aria-label="Lista progetti attivi"
+            >
+              {activeProjects.map((project) => (
+                <ProjectCard 
+                  key={project.id} 
+                  project={project} 
+                  onArchiveToggle={handleArchiveToggle}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Archived Projects */}
+          {showArchived && archivedProjects.length > 0 && (
+            <>
+              <h2 className="text-lg font-semibold text-gray-700 mt-8 mb-4 flex items-center gap-2">
+                <Archive className="h-5 w-5" aria-hidden="true" />
+                Progetti Archiviati
+              </h2>
+              <div 
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                role="list"
+                aria-label="Lista progetti archiviati"
+              >
+                {archivedProjects.map((project) => (
+                  <ProjectCard 
+                    key={project.id} 
+                    project={project} 
+                    onArchiveToggle={handleArchiveToggle}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </>
       )}
 
       {/* New Project Modal */}
