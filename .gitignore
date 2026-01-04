@@ -40,6 +40,9 @@ yarn-error.log*
 .vscode/
 .kiro/
 
+# Documentation (private)
+MAINTENANCE.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
